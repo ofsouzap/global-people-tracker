@@ -1,4 +1,4 @@
-import './App.css'
+import "./App.css";
 
 function App(): React.JSX.Element {
   return (
@@ -6,7 +6,7 @@ function App(): React.JSX.Element {
       <h1>Global People Tracker</h1>
       <p>Development environment ready.</p>
     </main>
-  )
+  );
 }
 
-export default App
+export default App;
