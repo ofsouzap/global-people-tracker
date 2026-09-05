@@ -1,0 +1,825 @@
+People Map Web App — Project Plan
+
+Project goal
+- Build a mobile-first multi-user web app for tracking people the user has met throughout travels and life.
+- The primary interaction is an interactive 2D world map showing where people are primarily based.
+- The app should also support:
+  - adding and editing people;
+  - viewing people in a searchable list;
+  - handling people who do not yet have a based location;
+  - recording where and when people were met;
+  - storing contact details and free-form notes;
+  - importing and exporting all user data in a portable JSON format;
+  - automatic backups and restore;
+  - strict separation between different authenticated users.
+- Prefer conventional, well-established libraries and straightforward implementations.
+- Avoid clever or unnecessarily abstract architecture.
+- Keep the code easy for humans to read and review.
+- Development should proceed milestone by milestone, with the coding agent stopping after each milestone for human review.
+
+Core technology choices
+- Frontend:
+  - React.
+  - TypeScript with strict type checking.
+  - Vite.
+  - MUI for UI components and mobile-first layout.
+  - Leaflet for map rendering.
+  - OpenStreetMap standard tiles.
+- Backend:
+  - Python.
+  - FastAPI.
+  - Pydantic for API and persistence validation.
+  - Pyright in strict mode.
+  - Avoid Any except where unavoidable at third-party boundaries.
+  - Convert loosely typed third-party responses immediately into strongly typed internal models.
+- Persistence:
+  - One canonical JSON file per application user.
+  - JSON is the actual canonical store, not merely an export format.
+- Authentication:
+  - Google OAuth.
+  - Each application user receives an internal UUID.
+  - Google identity is mapped to the internal UUID.
+  - Application code uses only the internal UUID.
+  - API endpoints derive the current user from authentication/session context.
+  - Never trust a user ID supplied by the frontend for authorization.
+
+High-level architecture
+- Frontend:
+  - Mobile-first React app.
+  - Main screens:
+    - Map.
+    - People.
+    - Settings.
+  - Add-person action exposed prominently, preferably via a floating action button.
+- Backend:
+  - FastAPI routes.
+  - Authentication/session layer.
+  - Typed domain/API models.
+  - Per-user persistence layer.
+  - Backup/restore layer.
+  - Import/export layer.
+  - City geocoding proxy.
+- Storage:
+  - Conceptually:
+    data/
+      users/
+        <internal-user-uuid>/
+          people.json
+          backups/
+            ...
+  - Exact physical layout may vary, but all reads/writes/backups must be scoped to the authenticated internal user UUID.
+- Geographic data:
+  - Static bundled country data.
+  - Static bundled region data for supported countries.
+  - External city lookup through a backend proxy.
+  - Geoapify may be used for city lookup initially.
+  - Geoapify API key must remain backend-only.
+
+Person data model
+- Every person has a stable UUID.
+- Suggested shape:
+
+  {
+    "id": "<uuid>",
+    "name": "...",
+    "based_location": { ... } | null,
+    "met_location": { ... } | null,
+    "met_date": { ... } | null,
+    "contacts": { ... },
+    "notes": "..."
+  }
+
+- Name:
+  - Required.
+- based_location:
+  - Optional in the storage schema.
+  - Conceptually the primary location for the app.
+  - A person with no based_location is valid.
+  - People without based_location do not appear on the map.
+  - They appear in a dedicated part of the People UI.
+  - Do not call these people "drafts".
+- met_location:
+  - Optional.
+  - Uses the same location structure as based_location.
+- met_date:
+  - Optional as a whole.
+  - If present:
+    - year required;
+    - month required;
+    - day optional.
+  - Day granularity only; no time.
+  - Suggested structure:
+
+    {
+      "year": 2026,
+      "month": 8,
+      "day": 17
+    }
+
+- notes:
+  - Free-form text.
+  - Optional / empty string allowed.
+
+Location model
+- Locations use a simple flexible hierarchy:
+  - country;
+  - optional region;
+  - optional city.
+- Rules:
+  - country is required whenever a location object exists;
+  - region is optional;
+  - city is optional;
+  - city may be present even if region is absent.
+- Suggested structure:
+
+  {
+    "country": "Indonesia",
+    "region": "East Java",
+    "city": "Surabaya",
+    "coordinate_cache": {
+      "latitude": -7.2575,
+      "longitude": 112.7521
+    }
+  }
+
+- coordinate_cache:
+  - Optional.
+  - Explicitly treated as derived cached data.
+  - Semantic source of truth is country / region / city.
+  - Primarily populated for resolved city selections.
+  - May be regenerated later.
+  - Country/region representative coordinates normally come from bundled static geographic data.
+- Do not store presentation-specific map x/y coordinates.
+
+Location input UX
+- Use three visible inputs:
+  - Country.
+  - Region.
+  - City.
+- Country:
+  - Must be selected from a canonical country list.
+- Region:
+  - Optional.
+  - For selected countries initially, provide a known region list:
+    - USA.
+    - UK.
+    - Indonesia.
+    - Australia.
+    - Canada.
+    - China.
+  - More can be added later.
+  - The schema must remain generic and allow arbitrary region strings.
+  - Supporting a region selector is a UI capability, not a schema restriction.
+- City:
+  - Autocomplete text input.
+  - Query an external geocoding/city service through the backend.
+  - Constrain queries by selected country and, where possible, selected region.
+  - Backend normalizes provider-specific results into an application-owned typed response schema.
+  - Store selected city name and returned coordinates.
+  - Allow a free-form fallback if the city service cannot resolve a location.
+  - If free-form city has no coordinate cache, map rendering should fall back to region or country representative coordinates.
+
+Contacts model
+- Hybrid schema:
+  - common contact methods are explicitly named fields;
+  - uncommon contact methods go in an others list.
+- Suggested structure:
+
+  {
+    "instagram": "...",
+    "phone_number": "...",
+    "whatsapp": "...",
+    "email": "...",
+    "others": [
+      {
+        "type": "telegram",
+        "value": "..."
+      }
+    ]
+  }
+
+- All named contact fields optional.
+- others defaults to an empty list.
+- Keep phone_number and whatsapp separate because they are distinct contact methods even when values match.
+- Avoid duplicating the same contact both in a named field and in others.
+- Validation should be reasonable but not excessively strict in V1.
+
+Canonical user JSON
+- One file per application user.
+- Suggested top-level shape:
+
+  {
+    "schema_version": 1,
+    "revision": 42,
+    "people": [...]
+  }
+
+- schema_version:
+  - Explicit.
+  - Used for future migrations.
+- revision:
+  - Integer.
+  - Incremented on every successful dataset modification.
+  - Used for simple optimistic concurrency protection.
+- The file should be directly usable as the export format.
+
+Concurrency and write safety
+- Keep concurrency handling simple.
+- Every modifying API request should include the revision it was based on.
+- Backend compares it to the current dataset revision.
+- If revisions differ:
+  - reject with a conflict response;
+  - frontend reloads current data;
+  - do not attempt sophisticated automatic merging.
+- All writes must:
+  - be serialized per user;
+  - validate before writing;
+  - write to a temporary file;
+  - flush/close appropriately;
+  - atomically rename/replace people.json.
+- Centralize all persistence mutations through one persistence layer.
+- Do not allow individual endpoints to perform ad-hoc filesystem writes.
+
+Authentication and API identity
+- Real application:
+  - Google OAuth.
+  - Backend validates Google identity.
+  - Backend maps Google stable subject identifier to an internal application UUID.
+  - Backend creates an application session.
+  - Prefer a secure HttpOnly session cookie.
+  - API requests then look like normal calls such as GET /api/people.
+  - Frontend does not need to send its own internal user UUID.
+- Authorization:
+  - current user is derived server-side from session/authentication context;
+  - persistence paths are always derived from that internal user UUID;
+  - never expose an endpoint where supplying another user UUID is enough to access their data.
+- Development/testing before real OAuth:
+  - retain the same CurrentUser/auth dependency boundary;
+  - use a development-only fake auth implementation;
+  - it may map a development-only user selector/header to configured test UUIDs;
+  - ensure this mechanism is impossible to enable accidentally in production.
+- Tests must include multiple fake users to verify strict isolation.
+
+Map behavior
+- Use a standard 2D projected map via Leaflet.
+- Use OpenStreetMap standard tiles.
+- Keep tile configuration isolated so a hosted provider can replace OSM standard tiles later without architectural changes.
+- Person locations are displayed using circles rather than map-pin icons.
+- Circle size is only a display choice.
+- Circle radius must NOT be interpreted as geographic uncertainty or granularity.
+- For locations without city coordinates:
+  - country-only location -> representative country center;
+  - region location -> representative region center;
+  - resolved city -> city coordinate cache;
+  - unresolved city -> fall back to region or country.
+- Use normal Leaflet-compatible marker clustering.
+- Multiple people in the same/nearby place should cluster conventionally.
+
+Map interaction UX
+- Mobile-first behavior is mandatory.
+- Tap a cluster:
+  - zoom toward the cluster;
+  - allow clustering logic to separate markers if finer location data makes this possible;
+  - simultaneously open a bottom sheet containing the people represented by that selection.
+- Tap an individual person marker:
+  - open the same bottom-sheet component with a one-person list.
+- Bottom sheet:
+  - remains associated with the visible map;
+  - scrollable;
+  - contains one compact full-width tile per person.
+- Person tile shows:
+  - name;
+  - based location;
+  - contact-type indicators/icons.
+- Later milestone:
+  - tapping a person tile opens that person's full details.
+- Avoid implementing full detail navigation too early if it would make an early milestone too large.
+
+Main mobile navigation
+- Bottom navigation:
+  - Map.
+  - People.
+  - Settings.
+- Map:
+  - primary/home screen.
+- People:
+  - searchable list of all people;
+  - clear section/filter for people with no based location.
+- Add person:
+  - prominent floating action or equivalent.
+- Person details:
+  - full-screen page.
+  - view details first.
+  - edit action from there.
+- Settings:
+  - import;
+  - export;
+  - backup history / restore;
+  - account/logout.
+
+Person add/edit UX
+- Reuse one form component for add and edit.
+- Mobile-first full-screen form.
+- Suggested field order:
+  - Name.
+  - Based location.
+  - Met location.
+  - Met date.
+  - Contact details.
+  - Notes.
+- Country / region / city stacked vertically.
+- Known contact fields shown explicitly.
+- "Other contact" rows added dynamically.
+- Notes use multiline text input.
+- Inline validation.
+- Missing based_location must not prevent saving.
+- Save action should remain easy to reach on mobile, e.g. sticky top/bottom action area.
+- In edit mode:
+  - deletion is a separate destructive action near the bottom;
+  - never place deletion next to Save;
+  - no swipe-to-delete.
+
+Editing, deletion, and backups
+- Ordinary edits:
+  - save normally;
+  - no backup per field edit/save.
+- Daily automatic backup:
+  - on the first successful modification of a user's dataset on a given day, create that day's automatic backup.
+- Delete person:
+  - requires explicit confirmation;
+  - confirmation names the person;
+  - backend creates an immediate backup before deleting;
+  - then performs an atomic write.
+- Bulk destructive actions:
+  - create an immediate backup first;
+  - use stronger confirmation.
+- No special undo system in V1.
+- Recovery is through backup restore.
+
+Backup semantics
+- Keep all backups indefinitely in V1.
+- No retention cleanup.
+- Storage volume is expected to be small.
+- Each backup should include metadata sufficient to identify:
+  - timestamp;
+  - reason, e.g. daily, delete_person, import, restore;
+  - optionally affected person UUID where useful.
+- Restore:
+  - whole-dataset restore only in V1;
+  - requires explicit confirmation;
+  - before restoring, first back up the current state;
+  - restore then atomically replaces the canonical people.json.
+- No partial restore in V1.
+
+Import/export
+- Export:
+  - downloads the user's canonical JSON dataset as one file;
+  - filename should include the date, e.g. people-map-2026-09-05.json.
+- Import default:
+  - merge.
+- Import validation:
+  - validate the entire file before any write;
+  - reject malformed data;
+  - reject unsupported schema versions;
+  - determine:
+    - new people;
+    - identical already-present people;
+    - UUID conflicts.
+- Merge rules:
+  - imported person UUID absent locally -> add;
+  - imported UUID exists and record is exactly identical -> no-op;
+  - imported UUID exists but any field differs -> conflict.
+- Any conflict:
+  - fail the entire import;
+  - make no changes;
+  - do not partially import;
+  - do not attempt field-level merging in V1.
+- Import UX:
+  - validate first;
+  - show summary such as "12 new, 3 already present";
+  - only apply after confirmation.
+- Before applying a successful import:
+  - create a backup.
+- Replace-all import:
+  - do not implement in the first version unless explicitly added later.
+- Future versions may add richer conflict handling.
+
+Geography data and city lookup
+- Bundle static country metadata.
+- Bundle static region metadata for supported selector countries.
+- Static metadata should include representative coordinates.
+- Use established geographic datasets or libraries rather than manually invented coordinates.
+- City lookup:
+  - frontend calls application backend;
+  - backend calls provider such as Geoapify;
+  - API key remains backend-only;
+  - backend returns normalized typed city results.
+- Example normalized city response:
+
+  {
+    "name": "Surabaya",
+    "region": "East Java",
+    "country": "Indonesia",
+    "latitude": -7.25,
+    "longitude": 112.75
+  }
+
+- Never send person names, contacts, or notes to the geocoding provider.
+- Only geographic search text and geographic constraints should leave the application backend.
+
+Privacy and security principles
+- Treat data as private and sensitive by default.
+- Data may include:
+  - names;
+  - phone numbers;
+  - social handles;
+  - approximate home locations;
+  - notes.
+- Requirements:
+  - strict per-user isolation;
+  - HTTPS in deployment;
+  - no public profile URLs by default;
+  - avoid analytics that capture form contents;
+  - avoid unnecessary third-party transmission;
+  - do not expose Geoapify API key to the frontend.
+- Authentication and authorization logic should remain straightforward and auditable.
+
+API shape
+- Exact route naming can be adjusted during implementation, but keep the API small and conventional.
+- Likely endpoints:
+  - GET /api/people
+  - POST /api/people
+  - GET /api/people/{id}
+  - PUT /api/people/{id}
+  - DELETE /api/people/{id}
+  - POST /api/imports/validate
+  - POST /api/imports/apply
+  - GET /api/export
+  - GET /api/backups
+  - POST /api/backups/{id}/restore
+  - GET /api/locations/cities
+- Endpoints must use authenticated CurrentUser context rather than user IDs from URL/query/body for authorization.
+- Mutating requests should carry expected dataset revision where appropriate.
+
+Frontend coupling policy
+- MUI is the chosen UI library.
+- Do not build a large abstraction layer merely to hide MUI.
+- Instead:
+  - keep application/domain logic independent of MUI;
+  - keep data fetching/state hooks independent of MUI where practical;
+  - create sensible application-level components such as:
+    - PersonListItem;
+    - LocationEditor;
+    - ContactEditor;
+    - PersonSheet;
+    - ConfirmDeleteDialog.
+- Avoid allowing MUI-specific types to leak into shared domain/data layers.
+- This should keep future UI-library migration possible without making V1 over-engineered.
+
+Testing and CI
+- Backend unit tests:
+  - person schema validation;
+  - location validation;
+  - met-date validation;
+  - contact validation;
+  - merge-import behavior;
+  - revision conflicts;
+  - backup creation;
+  - restore behavior;
+  - delete behavior;
+  - persistence atomicity;
+  - user isolation.
+- Backend API tests:
+  - authenticated user only accesses own dataset;
+  - malformed import leaves data untouched;
+  - conflicting import fails atomically;
+  - city proxy normalizes provider responses.
+- Frontend tests:
+  - key form behavior;
+  - saving person without based location;
+  - people-without-location UI;
+  - cluster/person selection -> bottom sheet;
+  - import summary UI;
+  - destructive confirmation flows.
+- End-to-end tests:
+  - keep small in V1;
+  - key flows only:
+    - sign in -> add person -> appears in list/map;
+    - edit/delete person;
+    - export/import round trip.
+- CI should run early and continuously:
+  - frontend tests;
+  - backend tests;
+  - TypeScript type checking;
+  - Pyright strict type checking;
+  - linting;
+  - formatting checks where appropriate;
+  - frontend production build.
+- Avoid large snapshot-test suites or excessive browser-test infrastructure.
+
+Milestones
+
+Milestone 0 — Agent and development environment setup
+Goal:
+- Make the repository deterministic and easy for GitHub Copilot coding agent and humans to work in.
+
+Tasks:
+- Create repository skeleton:
+  - frontend/
+  - backend/
+  - .github/
+- Add .github/workflows/copilot-setup-steps.yml.
+- Ensure the Copilot setup workflow:
+  - configures the required Python version;
+  - configures Node.js;
+  - installs backend dependencies;
+  - installs frontend dependencies;
+  - leaves all tools required by later milestones available.
+- Establish dependency management and lockfiles:
+  - conventional npm setup for frontend;
+  - choose a conventional locked Python dependency workflow.
+- Add clear standard developer commands for:
+  - setup/install;
+  - run backend;
+  - run frontend;
+  - test;
+  - lint;
+  - typecheck;
+  - build.
+- Configure:
+  - strict TypeScript;
+  - Pyright strict;
+  - frontend linting/formatting;
+  - backend linting/formatting.
+- Add minimal CI proving the skeleton can:
+  - install;
+  - typecheck;
+  - lint;
+  - test;
+  - build.
+- Add repository-level Copilot instructions that state:
+  - project architecture;
+  - standard commands;
+  - strong typing requirements;
+  - preference for conventional, readable implementations;
+  - prohibition on unnecessary abstraction;
+  - requirement to stop at milestone boundaries for human review.
+- Do not implement substantive product functionality in this milestone.
+
+Acceptance/review checkpoint:
+- A fresh Copilot coding agent can enter the repo and immediately install, typecheck, lint, test, and build without inventing environment setup.
+- Human reviewer checks repository structure, commands, CI, typing setup, and Copilot setup workflow.
+- STOP after Milestone 0 for human review.
+
+Milestone 1 — Core typed backend, multi-user persistence, and CRUD
+Goal:
+- Establish the canonical data model and safe multi-user backend before building substantial UI.
+
+Tasks:
+- Implement strongly typed Pydantic models for:
+  - dataset;
+  - person;
+  - location;
+  - coordinate cache;
+  - met date;
+  - contacts;
+  - other contacts.
+- Add schema_version and revision.
+- Implement UUID person IDs.
+- Implement internal UUID user identity abstraction.
+- Implement CurrentUser/authentication dependency boundary.
+- For development:
+  - use a development-only fake authentication mechanism;
+  - support multiple fake users for isolation testing;
+  - ensure it cannot be accidentally enabled in production.
+- Implement per-user JSON persistence.
+- Implement per-user locking/serialization.
+- Implement safe temporary-file + atomic replacement writes.
+- Implement revision conflict checks.
+- Implement core CRUD API.
+- Implement automatic daily backup logic.
+- Implement immediate backup before deletion.
+- Add thorough backend unit/API tests.
+- Keep real Google OAuth out of this milestone.
+
+Acceptance/review checkpoint:
+- Multiple fake users have strictly isolated datasets.
+- CRUD works.
+- Missing based location is valid.
+- Concurrent stale writes are rejected cleanly.
+- JSON writes are safe/atomic.
+- Backup behavior works.
+- Pyright strict passes with no unjustified Any.
+- Human reviewer inspects persistence/auth boundaries and schema carefully.
+- STOP after Milestone 1.
+
+Milestone 2 — Basic mobile-first frontend and person data entry
+Goal:
+- Build the first usable mobile UI for creating and managing people, without map complexity yet.
+
+Tasks:
+- Create React + TypeScript + Vite frontend.
+- Use MUI.
+- Add mobile-first application shell.
+- Add bottom navigation:
+  - Map placeholder;
+  - People;
+  - Settings placeholder.
+- Implement People screen:
+  - searchable list;
+  - dedicated handling/section for people without based_location.
+- Implement prominent Add Person action.
+- Implement reusable add/edit person form.
+- Implement fields:
+  - name;
+  - based location;
+  - met location;
+  - met date;
+  - named contacts;
+  - other contacts;
+  - notes.
+- Implement country input using canonical country list.
+- Implement initial supported region selectors.
+- City may remain plain/free-form in this milestone if city lookup belongs to a later milestone.
+- Connect frontend to CRUD API.
+- Handle revision conflicts by reloading and surfacing a clear message.
+- Add focused frontend tests.
+
+Acceptance/review checkpoint:
+- App is comfortable to use on phone-sized screens.
+- User can add, view in list, edit, and save people.
+- User can save a person without based location.
+- People without location are clearly accessible.
+- Human reviewer focuses on form UX, mobile layout, and code clarity.
+- STOP after Milestone 2.
+
+Milestone 3 — Core map experience
+Goal:
+- Implement the defining map interaction without yet expanding into every detail screen or integration.
+
+Tasks:
+- Add Leaflet.
+- Use OpenStreetMap standard tiles.
+- Add bundled static country data.
+- Add bundled region data for initially supported countries.
+- Render people with based locations.
+- Use circle markers, not map pins.
+- Circle sizing is visual only and must not encode granularity/uncertainty.
+- Resolve display coordinates:
+  - city coordinate cache when available;
+  - otherwise region center;
+  - otherwise country center.
+- Add standard marker clustering.
+- Implement cluster tap:
+  - zoom toward cluster;
+  - allow clustering to separate markers;
+  - open bottom sheet with represented people.
+- Implement person-marker tap:
+  - open same bottom sheet with one person.
+- Bottom sheet person tiles:
+  - name;
+  - based location;
+  - contact indicators.
+- Keep person detail navigation optional/deferred if necessary to preserve milestone size.
+- Add tests for map selection state and bottom-sheet behavior where practical.
+
+Acceptance/review checkpoint:
+- Core map exploration works smoothly on mobile.
+- Cluster behavior is conventional and understandable.
+- Bottom sheet remains usable with several people.
+- Human reviewer focuses on map UX and marker/cluster behavior.
+- STOP after Milestone 3.
+
+Milestone 4 — Person details and city lookup
+Goal:
+- Complete the location-entry workflow and richer person exploration.
+
+Tasks:
+- Implement full-screen Person Details screen.
+- Tapping a bottom-sheet person tile opens full details.
+- Add edit action from person details.
+- Implement city autocomplete backend proxy.
+- Integrate initial provider, likely Geoapify.
+- Keep provider API key backend-only.
+- Normalize provider response into application-owned typed city result model.
+- Constrain city query by selected country and region where possible.
+- Populate coordinate_cache when city selection is resolved.
+- Support free-form unresolved city fallback.
+- Ensure unresolved city map fallback uses region/country coordinates.
+- Improve contact indicators and location presentation.
+- Add provider-boundary tests using mocks/fakes.
+
+Acceptance/review checkpoint:
+- User can efficiently select cities on mobile.
+- Geoapify-specific structures do not leak through the application.
+- API key is not present in frontend bundle/config.
+- Person detail navigation works cleanly.
+- Human reviewer focuses on city UX, provider isolation, and details flow.
+- STOP after Milestone 4.
+
+Milestone 5 — Real authentication, import/export, backup history, restore
+Goal:
+- Finish the multi-user and data-safety features required for real use.
+
+Tasks:
+- Implement Google OAuth.
+- Map Google subject identifier to internal user UUID.
+- Implement secure application sessions.
+- Prefer Secure + HttpOnly cookies with appropriate SameSite policy.
+- Remove reliance on development fake auth outside explicit development/testing environments.
+- Add authentication/logout UI.
+- Verify strict user isolation end-to-end.
+- Implement export:
+  - canonical one-file JSON download;
+  - date in filename.
+- Implement import validation endpoint.
+- Implement merge-import rules exactly as specified.
+- Entire import fails on differing duplicate UUID.
+- Show validation summary before applying.
+- Back up before applying successful import.
+- Implement backup history screen.
+- Implement whole-dataset restore.
+- Back up current state before restore.
+- Add explicit destructive confirmations.
+
+Acceptance/review checkpoint:
+- Two real authenticated users cannot access each other's data.
+- Export/import round trip works.
+- Conflicting import is atomic and safe.
+- Restore works and itself preserves the previous current state.
+- Human reviewer focuses on auth, authorization, import safety, and restore.
+- STOP after Milestone 5.
+
+Milestone 6 — Hardening and release-ready pass
+Goal:
+- Make the application robust enough for normal ongoing use.
+
+Tasks:
+- Add/complete critical end-to-end tests.
+- Audit authorization boundaries.
+- Audit backend typing.
+- Audit frontend strict typing.
+- Improve:
+  - loading states;
+  - empty states;
+  - network error handling;
+  - revision conflict messaging;
+  - geocoder outage/failure behavior;
+  - import validation errors;
+  - backup/restore feedback;
+  - responsive/mobile layout.
+- Ensure OSM attribution is correctly displayed.
+- Verify map/provider configuration is easy to replace later.
+- Add deployment configuration/documentation.
+- Add README covering:
+  - local setup;
+  - environment variables;
+  - OAuth setup;
+  - Geoapify configuration;
+  - tests/typechecks/build;
+  - storage format;
+  - backup location;
+  - deployment considerations.
+- Keep all backups indefinitely.
+- Do not add speculative advanced features during hardening.
+
+Acceptance/review checkpoint:
+- CI passes fully.
+- Critical end-to-end flows pass.
+- Mobile UX is polished enough for regular use.
+- Security/data-loss review finds no obvious issues.
+- Deployment and local development are documented.
+- STOP after Milestone 6 for final human review.
+
+Non-goals / defer until later versions
+- Sophisticated import conflict resolution.
+- Replace-all import unless explicitly added.
+- Field-level merge of conflicting people.
+- Backup retention/cleanup.
+- Partial backup restore.
+- Public profiles.
+- Fine-grained sharing between users.
+- Exact uncertainty visualization.
+- Administrative polygon highlighting.
+- Offline map support.
+- Custom map engine/projection code.
+- Large-scale distributed persistence.
+- Sophisticated concurrent editing.
+- UI-library abstraction framework.
+- Premature database migration.
+- Excessive analytics.
+- Any feature that makes the code significantly harder to read/review without clear immediate value.
+
+Implementation principles for the coding agent
+- Favor boring, conventional solutions.
+- Keep modules small and responsibilities obvious.
+- Strong typing is a hard requirement, especially in Python.
+- Do not use Any as an escape hatch.
+- Keep third-party integrations behind narrow typed boundaries.
+- Keep authorization server-derived.
+- Keep persistence mutations centralized.
+- Prefer explicit validation and safe failure over implicit recovery.
+- Do not silently merge conflicting imported data.
+- Do not optimize for hypothetical large-scale usage.
+- Preserve mobile-first UX in every frontend decision.
+- Do not proceed past a milestone until a human reviewer has approved it.
