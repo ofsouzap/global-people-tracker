@@ -1,5 +1,3 @@
-import "./App.css";
-
 function App(): React.JSX.Element {
   return (
     <main>
