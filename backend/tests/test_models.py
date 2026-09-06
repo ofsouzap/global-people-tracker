@@ -36,6 +36,9 @@ def test_contacts_default_to_empty_other_contacts() -> None:
     with pytest.raises(ValidationError):
         Contacts(instagram="ada", others=[OtherContact(type="instagram", value="ada")])
 
+    with pytest.raises(ValidationError):
+        Contacts(instagram="ada", others=[OtherContact(type="Instagram", value="ada")])
+
 
 def test_dataset_rejects_duplicate_person_ids() -> None:
     person_id = uuid4()

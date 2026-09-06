@@ -41,7 +41,7 @@ class DatasetStore:
         expected_revision: int,
         mutation: Callable[[Dataset], None],
         *,
-        deletion: bool = False,
+        create_backup_before_mutation: bool = False,
     ) -> Dataset:
         """Apply one revision-guarded mutation and atomically persist it."""
         with self._lock_for(user_id):
@@ -51,7 +51,7 @@ class DatasetStore:
             previous_dataset = Dataset.model_validate(dataset.model_dump())
             mutation(dataset)
             self._create_daily_backup_unlocked(user_id, previous_dataset)
-            if deletion:
+            if create_backup_before_mutation:
                 self._create_backup_unlocked(user_id, previous_dataset, "delete_person")
             dataset.revision += 1
             self._write_unlocked(user_id, dataset)
@@ -64,7 +64,12 @@ class DatasetStore:
     def _dataset_path(self, user_id: UUID) -> Path:
         return self._root / "users" / str(user_id) / "people.json"
 
+    def _backup_directory(self, user_id: UUID) -> Path:
+        """Return the directory containing a user's dataset backups."""
+        return self._dataset_path(user_id).parent / "backups"
+
     def _read_unlocked(self, user_id: UUID) -> Dataset:
+        """Read a dataset while the lock returned by _lock_for(user_id) is held."""
         path = self._dataset_path(user_id)
         if not path.exists():
             return Dataset()
@@ -72,26 +77,30 @@ class DatasetStore:
             return Dataset.model_validate(json.load(file))
 
     def _create_daily_backup_unlocked(self, user_id: UUID, dataset: Dataset) -> None:
-        backups = self._dataset_path(user_id).parent / "backups"
+        """Back up a dataset once daily while the user's lock is held."""
+        backups = self._backup_directory(user_id)
         today_prefix = datetime.now(UTC).date().isoformat()
         daily_backup_exists = backups.exists() and any(
-            backups.glob(f"{today_prefix}T*_daily_*.json")
+            backups.glob(f"{today_prefix}T*UTC_daily_*.json")
         )
         if not daily_backup_exists:
             self._create_backup_unlocked(user_id, dataset, "daily")
 
     def _create_backup_unlocked(self, user_id: UUID, dataset: Dataset, reason: str) -> None:
-        backups = self._dataset_path(user_id).parent / "backups"
+        """Atomically save a dataset backup while the user's lock is held."""
+        backups = self._backup_directory(user_id)
         backups.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%S-%fZ")
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%S-%fUTC")
         path = backups / f"{timestamp}_{reason}_{dataset.revision}.json"
         self._atomic_write(path, dataset.model_dump(mode="json"))
 
     def _write_unlocked(self, user_id: UUID, dataset: Dataset) -> None:
+        """Atomically replace a dataset while the lock returned by _lock_for(user_id) is held."""
         self._atomic_write(self._dataset_path(user_id), dataset.model_dump(mode="json"))
 
     @staticmethod
     def _atomic_write(path: Path, contents: dict[str, object]) -> None:
+        """Durably write a temporary file, then atomically replace the destination."""
         path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary_path = tempfile.mkstemp(prefix=".people-", dir=path.parent, text=True)
         try:

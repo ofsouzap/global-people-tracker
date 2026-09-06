@@ -113,7 +113,12 @@ def delete_person(
         raise PersonNotFoundError
 
     try:
-        store.mutate(current_user.id, request.expected_revision, remove_person, deletion=True)
+        store.mutate(
+            current_user.id,
+            request.expected_revision,
+            remove_person,
+            create_backup_before_mutation=True,
+        )
     except RevisionConflictError:
         raise _revision_conflict() from None
     except PersonNotFoundError:
