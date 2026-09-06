@@ -15,6 +15,7 @@ import type {
   Contacts,
   Location,
   OtherContact,
+  MetDate,
   Person,
   PersonInput,
 } from "./api";
@@ -75,6 +76,81 @@ function LocationFields({
         value={value?.city ?? ""}
         disabled={!country}
         onChange={(event) => update({ city: event.target.value || null })}
+      />
+    </Stack>
+  );
+}
+
+function MetDateFields({
+  value,
+  onChange,
+}: {
+  value: MetDate | null | undefined;
+  onChange: (date: MetDate | null) => void;
+}): React.JSX.Element {
+  const [year, setYear] = useState(value?.year.toString() ?? "");
+  const [month, setMonth] = useState(value?.month.toString() ?? "");
+  const [day, setDay] = useState(value?.day?.toString() ?? "");
+  const updateDate = (
+    nextYear: string,
+    nextMonth: string,
+    nextDay: string,
+  ): void => {
+    const parsedYear = Number(nextYear);
+    const parsedMonth = Number(nextMonth);
+    const parsedDay = Number(nextDay);
+    if (
+      !Number.isInteger(parsedYear) ||
+      parsedYear < 1 ||
+      !Number.isInteger(parsedMonth) ||
+      parsedMonth < 1 ||
+      parsedMonth > 12 ||
+      (nextDay !== "" &&
+        (!Number.isInteger(parsedDay) || parsedDay < 1 || parsedDay > 31))
+    ) {
+      onChange(null);
+      return;
+    }
+    onChange({
+      year: parsedYear,
+      month: parsedMonth,
+      day: nextDay === "" ? null : parsedDay,
+    });
+  };
+
+  return (
+    <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+      <TextField
+        label="Met year"
+        type="number"
+        value={year}
+        onChange={(event) => {
+          const nextYear = event.target.value;
+          setYear(nextYear);
+          updateDate(nextYear, month, day);
+        }}
+      />
+      <TextField
+        label="Month"
+        type="number"
+        slotProps={{ htmlInput: { min: 1, max: 12 } }}
+        value={month}
+        onChange={(event) => {
+          const nextMonth = event.target.value;
+          setMonth(nextMonth);
+          updateDate(year, nextMonth, day);
+        }}
+      />
+      <TextField
+        label="Day"
+        type="number"
+        slotProps={{ htmlInput: { min: 1, max: 31 } }}
+        value={day}
+        onChange={(event) => {
+          const nextDay = event.target.value;
+          setDay(nextDay);
+          updateDate(year, month, nextDay);
+        }}
       />
     </Stack>
   );
@@ -141,60 +217,10 @@ export function PersonForm({
             value={draft.met_location}
             onChange={(met_location) => setDraft({ ...draft, met_location })}
           />
-          <Stack direction="row" spacing={1}>
-            <TextField
-              label="Met year"
-              type="number"
-              value={draft.met_date?.year ?? ""}
-              onChange={(event) => {
-                const year = Number(event.target.value);
-                setDraft({
-                  ...draft,
-                  met_date:
-                    Number.isInteger(year) && year > 0
-                      ? {
-                          ...draft.met_date,
-                          year,
-                          month: draft.met_date?.month ?? 1,
-                        }
-                      : null,
-                });
-              }}
-            />
-            <TextField
-              label="Month"
-              type="number"
-              slotProps={{ htmlInput: { min: 1, max: 12 } }}
-              value={draft.met_date?.month ?? ""}
-              onChange={(event) => {
-                const month = Number(event.target.value);
-                setDraft({
-                  ...draft,
-                  met_date:
-                    draft.met_date && month >= 1 && month <= 12
-                      ? { ...draft.met_date, month }
-                      : draft.met_date,
-                });
-              }}
-            />
-            <TextField
-              label="Day"
-              type="number"
-              slotProps={{ htmlInput: { min: 1, max: 31 } }}
-              value={draft.met_date?.day ?? ""}
-              onChange={(event) =>
-                setDraft({
-                  ...draft,
-                  met_date: draft.met_date
-                    ? {
-                        ...draft.met_date,
-                        day: Number(event.target.value) || null,
-                      }
-                    : null,
-                })
-              }
-            />
-          </Stack>
+          <MetDateFields
+            value={draft.met_date}
+            onChange={(met_date) => setDraft({ ...draft, met_date })}
+          />
           <Typography variant="subtitle2">Contact details</Typography>
           {(["instagram", "phone_number", "whatsapp", "email"] as const).map(
             (field) => (
