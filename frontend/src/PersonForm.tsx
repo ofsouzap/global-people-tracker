@@ -32,6 +32,14 @@ const emptyPerson = (): PersonInput => ({
   notes: "",
 });
 
+function personInput(person: Person | null): PersonInput {
+  if (person === null) {
+    return emptyPerson();
+  }
+  const { id: _, ...input } = person;
+  return input;
+}
+
 function LocationFields({
   label,
   value,
@@ -167,7 +175,7 @@ export function PersonForm({
   onDelete: (person: Person) => Promise<void>;
   onClose: () => void;
 }): React.JSX.Element {
-  const [draft, setDraft] = useState<PersonInput>(person ?? emptyPerson());
+  const [draft, setDraft] = useState<PersonInput>(() => personInput(person));
   const [saving, setSaving] = useState(false);
   const setContacts = (contacts: Contacts): void =>
     setDraft((current) => ({ ...current, contacts }));
