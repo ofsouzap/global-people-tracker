@@ -24,18 +24,24 @@ import { PersonForm } from "./PersonForm";
 
 type Page = "map" | "people" | "settings";
 
+interface PeopleDataset {
+  people: Person[];
+  revision: number;
+}
+
 function App(): React.JSX.Element {
   const [page, setPage] = useState<Page>("people");
-  const [people, setPeople] = useState<Person[]>([]);
-  const [revision, setRevision] = useState(0);
+  const [dataset, setDataset] = useState<PeopleDataset>({
+    people: [],
+    revision: 0,
+  });
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Person | null | undefined>(undefined);
   const [message, setMessage] = useState<string | null>(null);
   const loadPeople = useCallback(async () => {
     try {
       const response = await getPeople();
-      setPeople(response.people);
-      setRevision(response.revision);
+      setDataset(response);
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Unable to load people.",
@@ -50,16 +56,16 @@ function App(): React.JSX.Element {
   const save = async (input: PersonInput): Promise<void> => {
     try {
       const response = editing
-        ? await updatePerson(editing.id, input, revision)
-        : await createPerson(input, revision);
-      setPeople((current) =>
-        editing
-          ? current.map((person) =>
+        ? await updatePerson(editing.id, input, dataset.revision)
+        : await createPerson(input, dataset.revision);
+      setDataset((current) => ({
+        people: editing
+          ? current.people.map((person) =>
               person.id === editing.id ? response.person : person,
             )
-          : [...current, response.person],
-      );
-      setRevision(response.revision);
+          : [...current.people, response.person],
+        revision: response.revision,
+      }));
       setEditing(undefined);
     } catch (error) {
       if (error instanceof RevisionConflictError) {
@@ -76,11 +82,13 @@ function App(): React.JSX.Element {
       return;
     }
     try {
-      await deletePerson(person.id, revision);
-      setPeople((current) =>
-        current.filter((currentPerson) => currentPerson.id !== person.id),
-      );
-      setRevision((current) => current + 1);
+      await deletePerson(person.id, dataset.revision);
+      setDataset((current) => ({
+        people: current.people.filter(
+          (currentPerson) => currentPerson.id !== person.id,
+        ),
+        revision: current.revision + 1,
+      }));
       setEditing(undefined);
     } catch (error) {
       if (error instanceof RevisionConflictError) {
@@ -110,7 +118,7 @@ function App(): React.JSX.Element {
       <Box component="main" sx={{ p: 2 }}>
         {page === "people" && (
           <PeopleScreen
-            people={people}
+            people={dataset.people}
             query={query}
             onQueryChange={setQuery}
             onEdit={setEditing}

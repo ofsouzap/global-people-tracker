@@ -27,8 +27,9 @@ export function PeopleScreen({
   onQueryChange: (query: string) => void;
   onEdit: (person: Person) => void;
 }): React.JSX.Element {
+  const normalizedQuery = query.trim().toLowerCase();
   const filteredPeople = people.filter((person) =>
-    person.name.toLowerCase().includes(query.toLowerCase()),
+    person.name.toLowerCase().includes(normalizedQuery),
   );
   const locatedPeople = filteredPeople.filter(
     (person) => person.based_location,
@@ -58,25 +59,24 @@ export function PeopleScreen({
           </ListItem>
         ))}
       </List>
-      <Divider />
-      <Typography variant="h6">No based location</Typography>
-      <List disablePadding>
-        {unlocatedPeople.map((person) => (
-          <ListItem key={person.id} disablePadding>
-            <ListItemButton onClick={() => onEdit(person)}>
-              <ListItemText
-                primary={person.name}
-                secondary="Location not recorded"
-              />
-            </ListItemButton>
-          </ListItem>
-        ))}
-        {unlocatedPeople.length === 0 && (
-          <Typography color="text.secondary">
-            Everyone in this search has a based location.
-          </Typography>
-        )}
-      </List>
+      {unlocatedPeople.length > 0 && (
+        <>
+          <Divider />
+          <Typography variant="h6">No based location</Typography>
+          <List disablePadding>
+            {unlocatedPeople.map((person) => (
+              <ListItem key={person.id} disablePadding>
+                <ListItemButton onClick={() => onEdit(person)}>
+                  <ListItemText
+                    primary={person.name}
+                    secondary="Location not recorded"
+                  />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
+        </>
+      )}
     </Stack>
   );
 }

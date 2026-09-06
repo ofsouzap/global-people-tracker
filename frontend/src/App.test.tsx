@@ -42,4 +42,17 @@ describe("App", () => {
     expect(screen.getByText("Ada")).toBeTruthy();
     expect(screen.queryByText("Lin")).toBeNull();
   });
+
+  it("trims searches and hides the no-location section when it has no people", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(peopleResponse()));
+    render(<App />);
+
+    await screen.findByText("Ada");
+    fireEvent.change(screen.getByLabelText("Search people"), {
+      target: { value: " Ada " },
+    });
+
+    expect(screen.getByText("Ada")).toBeTruthy();
+    expect(screen.queryByText("No based location")).toBeNull();
+  });
 });
