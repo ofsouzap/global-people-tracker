@@ -7,7 +7,7 @@ afterEach(() => {
 });
 
 describe("PersonForm", () => {
-  it("shows field errors and prevents saving an invalid partial met date", () => {
+  it("uses native validation to prevent saving an invalid partial met date", () => {
     const onSave = vi.fn();
     render(
       <PersonForm
@@ -24,12 +24,12 @@ describe("PersonForm", () => {
       target: { value: "13" },
     });
 
-    expect(screen.getByText("Enter a year.")).toBeTruthy();
-    expect(screen.getByText("Month must be 1–12.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Save person" })).toHaveProperty(
-      "disabled",
-      true,
-    );
+    expect(
+      (screen.getByLabelText("Met year") as HTMLInputElement).validity.valid,
+    ).toBe(false);
+    expect(
+      (screen.getByLabelText("Month") as HTMLInputElement).validity.valid,
+    ).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Save person" }));
     expect(onSave).not.toHaveBeenCalled();
   });

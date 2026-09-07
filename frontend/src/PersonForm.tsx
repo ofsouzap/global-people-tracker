@@ -10,7 +10,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   Contacts,
   Location,
@@ -92,16 +92,35 @@ function LocationFields({
 function MetDateFields({
   value,
   onChange,
-  onValidityChange,
 }: {
   value: MetDate | null | undefined;
   onChange: (date: MetDate | null) => void;
-  onValidityChange: (isValid: boolean) => void;
 }): React.JSX.Element {
   const [year, setYear] = useState(value?.year.toString() ?? "");
   const [month, setMonth] = useState(value?.month.toString() ?? "");
   const [day, setDay] = useState(value?.day?.toString() ?? "");
+  const dayInput = useRef<HTMLInputElement>(null);
   const hasDateInput = year !== "" || month !== "" || day !== "";
+  const yearNumber = Number(year);
+  const monthNumber = Number(month);
+  const dayNumber = Number(day);
+  const calendarDateIsInvalid =
+    day !== "" &&
+    Number.isInteger(yearNumber) &&
+    yearNumber >= 1 &&
+    Number.isInteger(monthNumber) &&
+    monthNumber >= 1 &&
+    monthNumber <= 12 &&
+    (!Number.isInteger(dayNumber) ||
+      dayNumber < 1 ||
+      dayNumber > new Date(yearNumber, monthNumber, 0).getDate());
+
+  useEffect(() => {
+    dayInput.current?.setCustomValidity(
+      calendarDateIsInvalid ? "Enter a valid day for the selected month." : "",
+    );
+  }, [calendarDateIsInvalid]);
+
   const updateDate = (
     nextYear: string,
     nextMonth: string,
@@ -110,7 +129,6 @@ function MetDateFields({
     const allFieldsEmpty =
       nextYear === "" && nextMonth === "" && nextDay === "";
     if (allFieldsEmpty) {
-      onValidityChange(true);
       onChange(null);
       return;
     }
@@ -127,7 +145,6 @@ function MetDateFields({
         (Number.isInteger(parsedDay) &&
           parsedDay >= 1 &&
           parsedDay <= new Date(parsedYear, parsedMonth, 0).getDate()));
-    onValidityChange(isValid);
     if (!isValid) {
       return;
     }
@@ -144,8 +161,7 @@ function MetDateFields({
         label="Met year"
         type="number"
         value={year}
-        error={hasDateInput && year === ""}
-        helperText={hasDateInput && year === "" ? "Enter a year." : undefined}
+        slotProps={{ htmlInput: { min: 1, required: hasDateInput } }}
         onChange={(event) => {
           const nextYear = event.target.value;
           setYear(nextYear);
@@ -155,21 +171,8 @@ function MetDateFields({
       <TextField
         label="Month"
         type="number"
-        slotProps={{ htmlInput: { min: 1, max: 12 } }}
+        slotProps={{ htmlInput: { min: 1, max: 12, required: hasDateInput } }}
         value={month}
-        error={
-          hasDateInput &&
-          (month === "" || Number(month) < 1 || Number(month) > 12)
-        }
-        helperText={
-          month === ""
-            ? hasDateInput
-              ? "Enter a month."
-              : undefined
-            : Number(month) < 1 || Number(month) > 12
-              ? "Month must be 1–12."
-              : undefined
-        }
         onChange={(event) => {
           const nextMonth = event.target.value;
           setMonth(nextMonth);
@@ -181,20 +184,7 @@ function MetDateFields({
         type="number"
         slotProps={{ htmlInput: { min: 1, max: 31 } }}
         value={day}
-        error={
-          day !== "" &&
-          (!Number.isInteger(Number(day)) ||
-            Number(day) < 1 ||
-            Number(day) > new Date(Number(year), Number(month), 0).getDate())
-        }
-        helperText={
-          day !== "" &&
-          (!Number.isInteger(Number(day)) ||
-            Number(day) < 1 ||
-            Number(day) > new Date(Number(year), Number(month), 0).getDate())
-            ? "Enter a valid day."
-            : undefined
-        }
+        inputRef={dayInput}
         onChange={(event) => {
           const nextDay = event.target.value;
           setDay(nextDay);
@@ -218,7 +208,6 @@ export function PersonForm({
 }): React.JSX.Element {
   const [draft, setDraft] = useState<PersonInput>(() => personInput(person));
   const [saving, setSaving] = useState(false);
-  const [metDateIsValid, setMetDateIsValid] = useState(true);
   const setContacts = (contacts: Contacts): void =>
     setDraft((current) => ({ ...current, contacts }));
   const setOther = (index: number, updates: Partial<OtherContact>): void => {
@@ -230,9 +219,6 @@ export function PersonForm({
     });
   };
   const save = async (): Promise<void> => {
-    if (!draft.name.trim() || !metDateIsValid) {
-      return;
-    }
     setSaving(true);
     try {
       await onSave({ ...draft, name: draft.name.trim() });
@@ -245,7 +231,16 @@ export function PersonForm({
     <Dialog open fullScreen onClose={onClose}>
       <DialogTitle>{person ? "Edit person" : "Add person"}</DialogTitle>
       <DialogContent>
-        <Stack spacing={3} sx={{ pt: 1, pb: 3 }}>
+        <Stack
+          component="form"
+          id="person-form"
+          spacing={3}
+          sx={{ pt: 1, pb: 3 }}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save();
+          }}
+        >
           <TextField
             autoFocus
             required
@@ -270,7 +265,6 @@ export function PersonForm({
           <MetDateFields
             value={draft.met_date}
             onChange={(met_date) => setDraft({ ...draft, met_date })}
-            onValidityChange={setMetDateIsValid}
           />
           <Typography variant="subtitle2">Contact details</Typography>
           {(["instagram", "phone_number", "whatsapp", "email"] as const).map(
@@ -349,8 +343,9 @@ export function PersonForm({
         <Button onClick={onClose}>Cancel</Button>
         <Button
           variant="contained"
-          disabled={!draft.name.trim() || !metDateIsValid || saving}
-          onClick={() => void save()}
+          disabled={saving}
+          type="submit"
+          form="person-form"
         >
           Save person
         </Button>
