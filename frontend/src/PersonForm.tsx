@@ -1,5 +1,6 @@
 import {
   Autocomplete,
+  Box,
   Button,
   Dialog,
   DialogActions,
@@ -99,6 +100,7 @@ function MetDateFields({
   const [year, setYear] = useState(value?.year.toString() ?? "");
   const [month, setMonth] = useState(value?.month.toString() ?? "");
   const [day, setDay] = useState(value?.day?.toString() ?? "");
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const dayInput = useRef<HTMLInputElement>(null);
   const hasDateInput = year !== "" || month !== "" || day !== "";
   const yearNumber = Number(year);
@@ -154,6 +156,22 @@ function MetDateFields({
       day: nextDay === "" ? null : parsedDay,
     });
   };
+  const showValidationError = (
+    field: string,
+    event: React.InvalidEvent<HTMLDivElement>,
+  ): void => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) {
+      return;
+    }
+    setErrors((current) => ({
+      ...current,
+      [field]: input.validationMessage,
+    }));
+  };
+  const clearValidationError = (field: string): void => {
+    setErrors((current) => ({ ...current, [field]: "" }));
+  };
 
   return (
     <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
@@ -162,7 +180,11 @@ function MetDateFields({
         type="number"
         value={year}
         slotProps={{ htmlInput: { min: 1, required: hasDateInput } }}
+        error={Boolean(errors.year)}
+        helperText={errors.year}
+        onInvalid={(event) => showValidationError("year", event)}
         onChange={(event) => {
+          clearValidationError("year");
           const nextYear = event.target.value;
           setYear(nextYear);
           updateDate(nextYear, month, day);
@@ -173,7 +195,11 @@ function MetDateFields({
         type="number"
         slotProps={{ htmlInput: { min: 1, max: 12, required: hasDateInput } }}
         value={month}
+        error={Boolean(errors.month)}
+        helperText={errors.month}
+        onInvalid={(event) => showValidationError("month", event)}
         onChange={(event) => {
+          clearValidationError("month");
           const nextMonth = event.target.value;
           setMonth(nextMonth);
           updateDate(year, nextMonth, day);
@@ -185,7 +211,11 @@ function MetDateFields({
         slotProps={{ htmlInput: { min: 1, max: 31 } }}
         value={day}
         inputRef={dayInput}
+        error={Boolean(errors.day)}
+        helperText={errors.day}
+        onInvalid={(event) => showValidationError("day", event)}
         onChange={(event) => {
+          clearValidationError("day");
           const nextDay = event.target.value;
           setDay(nextDay);
           updateDate(year, month, nextDay);
@@ -230,126 +260,120 @@ export function PersonForm({
   return (
     <Dialog open fullScreen onClose={onClose}>
       <DialogTitle>{person ? "Edit person" : "Add person"}</DialogTitle>
-      <DialogContent>
-        <Stack
-          component="form"
-          id="person-form"
-          spacing={3}
-          sx={{ pt: 1, pb: 3 }}
-          onSubmit={(event) => {
-            event.preventDefault();
-            void save();
-          }}
-        >
-          <TextField
-            autoFocus
-            required
-            label="Name"
-            value={draft.name}
-            onChange={(event) =>
-              setDraft({ ...draft, name: event.target.value })
-            }
-          />
-          <LocationFields
-            label="Based location"
-            value={draft.based_location}
-            onChange={(based_location) =>
-              setDraft({ ...draft, based_location })
-            }
-          />
-          <LocationFields
-            label="Where you met"
-            value={draft.met_location}
-            onChange={(met_location) => setDraft({ ...draft, met_location })}
-          />
-          <MetDateFields
-            value={draft.met_date}
-            onChange={(met_date) => setDraft({ ...draft, met_date })}
-          />
-          <Typography variant="subtitle2">Contact details</Typography>
-          {(["instagram", "phone_number", "whatsapp", "email"] as const).map(
-            (field) => (
-              <TextField
-                key={field}
-                label={field.replace("_", " ")}
-                value={draft.contacts[field] ?? ""}
-                onChange={(event) =>
-                  setContacts({
-                    ...draft.contacts,
-                    [field]: event.target.value || null,
-                  })
-                }
-              />
-            ),
+      <Box
+        component="form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <DialogContent>
+          <Stack spacing={3} sx={{ pt: 1, pb: 3 }}>
+            <TextField
+              autoFocus
+              required
+              label="Name"
+              value={draft.name}
+              onChange={(event) =>
+                setDraft({ ...draft, name: event.target.value })
+              }
+            />
+            <LocationFields
+              label="Based location"
+              value={draft.based_location}
+              onChange={(based_location) =>
+                setDraft({ ...draft, based_location })
+              }
+            />
+            <LocationFields
+              label="Where you met"
+              value={draft.met_location}
+              onChange={(met_location) => setDraft({ ...draft, met_location })}
+            />
+            <MetDateFields
+              value={draft.met_date}
+              onChange={(met_date) => setDraft({ ...draft, met_date })}
+            />
+            <Typography variant="subtitle2">Contact details</Typography>
+            {(["instagram", "phone_number", "whatsapp", "email"] as const).map(
+              (field) => (
+                <TextField
+                  key={field}
+                  label={field.replace("_", " ")}
+                  value={draft.contacts[field] ?? ""}
+                  onChange={(event) =>
+                    setContacts({
+                      ...draft.contacts,
+                      [field]: event.target.value || null,
+                    })
+                  }
+                />
+              ),
+            )}
+            {draft.contacts.others.map((contact, index) => (
+              <Stack direction="row" spacing={1} key={index}>
+                <TextField
+                  label="Contact type"
+                  value={contact.type}
+                  onChange={(event) =>
+                    setOther(index, { type: event.target.value })
+                  }
+                />
+                <TextField
+                  label="Contact value"
+                  value={contact.value}
+                  onChange={(event) =>
+                    setOther(index, { value: event.target.value })
+                  }
+                />
+                <IconButton
+                  aria-label="Remove other contact"
+                  onClick={() =>
+                    setContacts({
+                      ...draft.contacts,
+                      others: draft.contacts.others.filter(
+                        (_, currentIndex) => currentIndex !== index,
+                      ),
+                    })
+                  }
+                >
+                  ×
+                </IconButton>
+              </Stack>
+            ))}
+            <Button
+              onClick={() =>
+                setContacts({
+                  ...draft.contacts,
+                  others: [...draft.contacts.others, { type: "", value: "" }],
+                })
+              }
+            >
+              Add other contact
+            </Button>
+            <TextField
+              label="Notes"
+              multiline
+              minRows={4}
+              value={draft.notes}
+              onChange={(event) =>
+                setDraft({ ...draft, notes: event.target.value })
+              }
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          {person && (
+            <Button color="error" onClick={() => void onDelete(person)}>
+              Delete person
+            </Button>
           )}
-          {draft.contacts.others.map((contact, index) => (
-            <Stack direction="row" spacing={1} key={index}>
-              <TextField
-                label="Contact type"
-                value={contact.type}
-                onChange={(event) =>
-                  setOther(index, { type: event.target.value })
-                }
-              />
-              <TextField
-                label="Contact value"
-                value={contact.value}
-                onChange={(event) =>
-                  setOther(index, { value: event.target.value })
-                }
-              />
-              <IconButton
-                aria-label="Remove other contact"
-                onClick={() =>
-                  setContacts({
-                    ...draft.contacts,
-                    others: draft.contacts.others.filter(
-                      (_, currentIndex) => currentIndex !== index,
-                    ),
-                  })
-                }
-              >
-                ×
-              </IconButton>
-            </Stack>
-          ))}
-          <Button
-            onClick={() =>
-              setContacts({
-                ...draft.contacts,
-                others: [...draft.contacts.others, { type: "", value: "" }],
-              })
-            }
-          >
-            Add other contact
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="contained" disabled={saving} type="submit">
+            Save person
           </Button>
-          <TextField
-            label="Notes"
-            multiline
-            minRows={4}
-            value={draft.notes}
-            onChange={(event) =>
-              setDraft({ ...draft, notes: event.target.value })
-            }
-          />
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        {person && (
-          <Button color="error" onClick={() => void onDelete(person)}>
-            Delete person
-          </Button>
-        )}
-        <Button onClick={onClose}>Cancel</Button>
-        <Button
-          variant="contained"
-          disabled={saving}
-          type="submit"
-          form="person-form"
-        >
-          Save person
-        </Button>
-      </DialogActions>
+        </DialogActions>
+      </Box>
     </Dialog>
   );
 }

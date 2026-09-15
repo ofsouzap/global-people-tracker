@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PersonForm } from "./PersonForm";
 
@@ -32,5 +38,36 @@ describe("PersonForm", () => {
     ).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Save person" }));
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("keeps an edit form open and its date unchanged when date validation fails", async () => {
+    const onSave = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <PersonForm
+        person={{
+          id: "person-id",
+          name: "Ada",
+          met_date: { year: 2024, month: 2, day: 29 },
+          contacts: { others: [] },
+          notes: "",
+        }}
+        onSave={onSave}
+        onDelete={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Month"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save person" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Month").getAttribute("aria-invalid")).toBe(
+        "true",
+      ),
+    );
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
