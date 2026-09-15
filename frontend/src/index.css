@@ -1,4 +1,5 @@
 body {
   margin: 0;
-  font-family: system-ui, sans-serif;
+  min-width: 320px;
+  background: #f7f7f9;
 }
